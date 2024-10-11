@@ -1,4 +1,4 @@
-package ru.umom.smolaton.shared.utils
+package ru.umom.hackaton.shared.utils
 
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity

@@ -1,3 +1,3 @@
-package ru.umom.smolaton.shared.errors.common
+package ru.umom.hackaton.shared.errors.common
 
 class AlreadyExistsError(override val message: String) : RuntimeException()
