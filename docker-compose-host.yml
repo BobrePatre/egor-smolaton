@@ -1,0 +1,124 @@
+version: "3.8"
+name: "smolaton"
+
+services:
+  traefik:
+    image: traefik:v2.9
+    container_name: traefik
+    command:
+      - "--api.insecure=true"  # You can disable this in production
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=georgiy.gus@yandex.ru"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"     # HTTP
+      - "443:443"   # HTTPS
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./letsencrypt:/letsencrypt
+    networks:
+      - backend-network
+      - auth-network
+
+  backend-database:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: smolaton
+      POSTGRES_USER: smolaton
+    ports:
+      - "5432:5432"
+    volumes:
+      - businessdata:/var/lib/postgresql/data
+    networks:
+      - backend-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile-backend
+    depends_on:
+      - auth
+      - backend-database
+    labels:
+      - "traefik.http.routers.backend.rule=Host(`backend.my-creative.my-vm.work`)"  # Replace with your domain
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=myresolver"
+      - "traefik.http.services.backend.loadbalancer.server.port=2000"
+    environment:
+      - POSTGRES_HOST=backend-database
+      - POSTGRES_DB=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_PASSWORD=smolaton
+      - POSTGRES_USER=smolaton
+      - KEYCLOAK_CORE_CLIENT_ID=smolaton-client
+      - KEYCLOAK_MANAGE_CLIENT_ID=manage-client
+      - KEYCLOAK_MANAGE_CLIENT_SECRET=smolaton
+      - KEYCLOAK_REALM=smolaton
+      - KEYCLOAK_HOST=http://auth:8080
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+  auth-database:
+    image: postgres:latest
+    container_name: "auth-database"
+    volumes:
+      - userdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: smolaton
+      POSTGRES_USER: smolaton
+      POSTGRES_PASSWORD: smolaton
+    restart: unless-stopped
+    networks:
+      - auth-network
+
+  auth:
+    image: quay.io/keycloak/keycloak:25.0
+    ports:
+      - "8180:8080"
+      - "8443:8443"
+    environment:
+      KC_PROXY: edge
+      DB_DATABASE: smolaton
+      DB_SCHEMA: public
+#      KC_LOG_LEVEL: DEBUG
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://auth-database:5432/smolaton
+      KC_DB_USERNAME: smolaton
+      KC_DB_PASSWORD: smolaton
+      KC_HTTP_ENABLED: 'true'
+      KC_HOSTNAME_STRICT: 'false'
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      PROXY_ADDRESS_FORWARDING: true
+    labels:
+      - "traefik.http.routers.auth.rule=Host(`auth.my-creative.my-vm.work`)"  # Replace with your domain
+      - "traefik.http.routers.auth.service=auth"
+      - "traefik.http.routers.auth.entrypoints=websecure"
+      - "traefik.http.routers.auth.service=auth"
+      - "traefik.http.routers.auth.tls.certresolver=myresolver"
+      - "traefik.http.services.auth.loadbalancer.server.port=8080"
+
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --import-realm
+    volumes:
+      - ./keycloak/realms:/opt/keycloak/data/import
+      - ./keycloak/providers:/opt/keycloak/providers
+    networks:
+      - backend-network
+      - auth-network
+
+networks:
+  auth-network:
+  backend-network:
+
+volumes:
+  userdata:
+  businessdata:
+  letsencrypt:  # For SSL certificates storage
