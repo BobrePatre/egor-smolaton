@@ -41,7 +41,6 @@ services:
       context: .
       dockerfile: Dockerfile-backend
     depends_on:
-      - auth
       - backend-database
     labels:
       - "traefik.http.routers.backend.rule=Host(`backend.my-creative.my-vm.work`)"  # Replace with your domain
